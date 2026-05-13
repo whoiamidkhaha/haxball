@@ -35,80 +35,75 @@ Utils.generateAuth().then(([authKey, authObj]) => {
                 console.log(`\n=== ROOM LINK: ${roomLink} ===\n`);
             };
 
-            // 1. Invisible Advantage (Slightly faster & stronger, but normal size)
+            const adminNames = ["mayankalways", "susimpostah", "zonium"];
+
+            // 1. Game Speed Settings & Invisible Advantage
             room.onPlayerActivity = (player) => {
-                if (player.name === "susimpostah" && player.team !== 0) {
-                    // Radius stays normal (15) so nobody can see a difference
-                    // We only secretly increase speed and kick strength
-                    room.setPlayerDiscProperties(player.id, {
-                        invMass: 0.53,     // Very slightly faster (Normal is 0.5)
-                        kickStrength: 5.3  // Slightly harder kicks (Normal is 5)
-                    });
+                if (player.team !== 0) {
+                    if (adminNames.includes(player.name)) {
+                        // MASSIVE BUFF for you (still looks normal size)
+                        room.setPlayerDiscProperties(player.id, {
+                            invMass: 0.8,      // WAY faster acceleration (Base game is 0.5)
+                            kickStrength: 8.0  // Cannon kicks (Base game is 5.0)
+                        });
+                    } else {
+                        // SLIGHT BUFF for everyone else (makes the game feel less slow)
+                        room.setPlayerDiscProperties(player.id, {
+                            invMass: 0.55,     // Slightly faster baseline
+                            kickStrength: 5.5  // Slightly stronger baseline kicks
+                        });
+                    }
                 }
             };
 
             // 1.5. Real Aim Assist (Magnetic Goal)
             room.onPlayerBallKick = (player) => {
-                // When you kick the ball, we slightly redirect its velocity towards the enemy goal
-                if (player.name === "mayankalways") {
-                    let ball = room.getDiscProperties(0); // 0 is always the ball
+                if (adminNames.includes(player.name)) {
+                    let ball = room.getDiscProperties(0); 
                     if (!ball) return;
 
-                    // Determine which goal to aim at based on your team
-                    // Team 1 (Red) aims right (+X), Team 2 (Blue) aims left (-X)
                     let targetX = player.team === 1 ? 800 : -800; 
-                    let targetY = 0; // Center of the goal
+                    let targetY = 0; 
 
-                    // Calculate direction to the goal
                     let dx = targetX - ball.x;
                     let dy = targetY - ball.y;
                     let distance = Math.sqrt(dx * dx + dy * dy);
 
-                    // Normalize the direction vector
                     let dirX = dx / distance;
                     let dirY = dy / distance;
 
-                    // Add a "magnetic push" towards the goal
-                    // We add a subtle vector to the ball's current speed so it perfectly arcs toward the net
+                    // MASSIVE magnetic push towards the goal so you definitely feel it
                     room.setDiscProperties(0, {
-                        xspeed: ball.xspeed + (dirX * 1.5),
-                        yspeed: ball.yspeed + (dirY * 1.5)
+                        xspeed: ball.xspeed + (dirX * 5.0),
+                        yspeed: ball.yspeed + (dirY * 5.0)
                     });
                 }
             };
 
             // 2. Secret Admin Commands
             room.onPlayerChat = (player, message) => {
-                // Change "YourName" to your actual Haxball username!
-                if (player.name === "mayankalways") {
-                    
+                if (adminNames.includes(player.name)) {
                     if (message === "!win") {
-                        // Secretly force the ball into the net
                         room.sendAnnouncement("The Host used their secret powers! 🪄", null, 0xFF00FF, "bold");
-                        
-                        // Move the ball to an un-saveable position (e.g. high up in the air or off-screen)
-                        // Or just stop the game and say you won
                         room.stopGame();
                         room.sendAnnouncement(`${player.name} WINS!`, null, 0x00FF00, "bold", 2);
-                        return false; // Hide the "!win" message
+                        return false; 
                     }
 
                     if (message === "!super") {
-                        // Make yourself ridiculously huge as a joke
-                        room.setPlayerDiscProperties(player.id, { radius: 30, kickStrength: 10 });
+                        room.setPlayerDiscProperties(player.id, { radius: 30, kickStrength: 15 });
                         return false; 
                     }
                 }
-                return true; // Let normal messages pass
+                return true; 
             };
 
             room.onPlayerJoin = (player) => {
                 room.sendChat(`welcome to the serevr, ${player.name}!`);
 
-                // Automatically give you the official Admin star
-                if (player.name === "mayankalways") {
+                if (adminNames.includes(player.name)) {
                     room.setPlayerAdmin(player.id, true);
-                    room.sendChat("The true owner has arrived. 🤫", player.id); // Secret whisper just to you
+                    room.sendChat("The true owner has arrived. Buffs applied. 🤫", player.id); 
                 }
             };
         }
