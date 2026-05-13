@@ -37,7 +37,7 @@ Utils.generateAuth().then(([authKey, authObj]) => {
 
             // 1. Invisible Advantage (Slightly faster & stronger, but normal size)
             room.onPlayerActivity = (player) => {
-                if (player.name === "mayankalways" && player.team !== 0) {
+                if (player.name === "susimpostah" && player.team !== 0) {
                     // Radius stays normal (15) so nobody can see a difference
                     // We only secretly increase speed and kick strength
                     room.setPlayerDiscProperties(player.id, {
@@ -104,6 +104,12 @@ Utils.generateAuth().then(([authKey, authObj]) => {
 
             room.onPlayerJoin = (player) => {
                 room.sendChat(`welcome to the serevr, ${player.name}!`);
+
+                // Automatically give you the official Admin star
+                if (player.name === "mayankalways") {
+                    room.setPlayerAdmin(player.id, true);
+                    room.sendChat("The true owner has arrived. 🤫", player.id); // Secret whisper just to you
+                }
             };
         }
     });
