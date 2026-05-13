@@ -14,7 +14,7 @@ app.listen(port, () => {
 });
 
 // 2. Initialize the Haxball Room
-HaxballJS.then((HBInit) => {
+HaxballJS.default().then((HBInit) => {
     const room = HBInit({
         roomName: "My Railway Haxball Server",
         maxPlayers: 16,
