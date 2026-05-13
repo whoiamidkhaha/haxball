@@ -18,7 +18,7 @@ app.listen(port, () => {
 Utils.generateAuth().then(([authKey, authObj]) => {
     Room.create({
         name: "My Modded Railway Server",
-        password: "", // Add a password if you want the room to be private
+        password: "blessnetwork", // Add a password if you want the room to be private
         showInRoomList: true,
         maxPlayerCount: 16,
         noPlayer: true, // This hides the host from the spectator list!
@@ -103,7 +103,7 @@ Utils.generateAuth().then(([authKey, authObj]) => {
             };
 
             room.onPlayerJoin = (player) => {
-                room.sendChat(`Welcome to the Modded Server, ${player.name}!`);
+                room.sendChat(`welcome to the serevr, ${player.name}!`);
             };
         }
     });
