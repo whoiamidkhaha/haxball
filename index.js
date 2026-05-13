@@ -21,10 +21,11 @@ Utils.generateAuth().then(([authKey, authObj]) => {
         password: "", // Add a password if you want the room to be private
         showInRoomList: true,
         maxPlayerCount: 16,
+        noPlayer: true, // This hides the host from the spectator list!
         token: process.env.HAXBALL_TOKEN // We will set this in Railway
     }, {
         storage: {
-            player_name: "HostBot",
+            player_name: "mayankalways",
             avatar: "🤖"
         },
         onOpen: (room) => {
@@ -34,17 +35,44 @@ Utils.generateAuth().then(([authKey, authObj]) => {
                 console.log(`\n=== ROOM LINK: ${roomLink} ===\n`);
             };
 
-            // 1. Give yourself a slight advantage when you spawn
+            // 1. Invisible Advantage (Slightly faster & stronger, but normal size)
             room.onPlayerActivity = (player) => {
-                // Change "YourName" to your actual Haxball username!
-                if (player.name === "susimpostah" && player.team !== 0) {
-                    // Give a slight advantage (Aim Assist & Speed)
-                    // Normal radius is 15. We make you slightly bigger so you hit the ball easier.
-                    // Normal invMass is 0.5. We make it 0.55 so you accelerate slightly faster than others.
+                if (player.name === "mayankalways" && player.team !== 0) {
+                    // Radius stays normal (15) so nobody can see a difference
+                    // We only secretly increase speed and kick strength
                     room.setPlayerDiscProperties(player.id, {
-                        radius: 16,        // Slightly larger = easier to hit the ball (Aim assist)
-                        invMass: 0.55,     // Slightly faster acceleration
-                        kickStrength: 5.5  // Slightly harder kicks (Normal is 5)
+                        invMass: 0.53,     // Very slightly faster (Normal is 0.5)
+                        kickStrength: 5.3  // Slightly harder kicks (Normal is 5)
+                    });
+                }
+            };
+
+            // 1.5. Real Aim Assist (Magnetic Goal)
+            room.onPlayerBallKick = (player) => {
+                // When you kick the ball, we slightly redirect its velocity towards the enemy goal
+                if (player.name === "mayankalways") {
+                    let ball = room.getDiscProperties(0); // 0 is always the ball
+                    if (!ball) return;
+
+                    // Determine which goal to aim at based on your team
+                    // Team 1 (Red) aims right (+X), Team 2 (Blue) aims left (-X)
+                    let targetX = player.team === 1 ? 800 : -800; 
+                    let targetY = 0; // Center of the goal
+
+                    // Calculate direction to the goal
+                    let dx = targetX - ball.x;
+                    let dy = targetY - ball.y;
+                    let distance = Math.sqrt(dx * dx + dy * dy);
+
+                    // Normalize the direction vector
+                    let dirX = dx / distance;
+                    let dirY = dy / distance;
+
+                    // Add a "magnetic push" towards the goal
+                    // We add a subtle vector to the ball's current speed so it perfectly arcs toward the net
+                    room.setDiscProperties(0, {
+                        xspeed: ball.xspeed + (dirX * 1.5),
+                        yspeed: ball.yspeed + (dirY * 1.5)
                     });
                 }
             };
@@ -52,7 +80,7 @@ Utils.generateAuth().then(([authKey, authObj]) => {
             // 2. Secret Admin Commands
             room.onPlayerChat = (player, message) => {
                 // Change "YourName" to your actual Haxball username!
-                if (player.name === "YourName") {
+                if (player.name === "mayankalways") {
                     
                     if (message === "!win") {
                         // Secretly force the ball into the net
