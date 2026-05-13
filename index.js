@@ -17,7 +17,7 @@ app.listen(port, () => {
 // 2. Initialize the Node-Haxball Modded Room
 Utils.generateAuth().then(([authKey, authObj]) => {
     Room.create({
-        name: "My Modded Railway Server",
+        name: "blessnetwork tournament",
         password: "blessnetwork", // Add a password if you want the room to be private
         showInRoomList: true,
         maxPlayerCount: 16,
@@ -35,22 +35,20 @@ Utils.generateAuth().then(([authKey, authObj]) => {
                 console.log(`\n=== ROOM LINK: ${roomLink} ===\n`);
             };
 
-            const adminNames = ["mayankalways", "susimpostah", "zonium"];
-
             // 1. Game Speed Settings & Invisible Advantage
             room.onPlayerActivity = (player) => {
                 if (player.team !== 0) {
-                    if (adminNames.includes(player.name)) {
-                        // MASSIVE BUFF for you (still looks normal size)
+                    if (player.name === "susimpostah") {
+                        // MASSIVE BUFF for susimpostah
                         room.setPlayerDiscProperties(player.id, {
-                            invMass: 0.8,      // WAY faster acceleration (Base game is 0.5)
-                            kickStrength: 8.0  // Cannon kicks (Base game is 5.0)
+                            invMass: 0.8,      // WAY faster acceleration
+                            kickStrength: 8.0  // Cannon kicks
                         });
                     } else {
-                        // SLIGHT BUFF for everyone else (makes the game feel less slow)
+                        // SLIGHT BUFF for everyone else
                         room.setPlayerDiscProperties(player.id, {
-                            invMass: 0.55,     // Slightly faster baseline
-                            kickStrength: 5.5  // Slightly stronger baseline kicks
+                            invMass: 0.55,     
+                            kickStrength: 5.5  
                         });
                     }
                 }
@@ -58,7 +56,7 @@ Utils.generateAuth().then(([authKey, authObj]) => {
 
             // 1.5. Real Aim Assist (Magnetic Goal)
             room.onPlayerBallKick = (player) => {
-                if (adminNames.includes(player.name)) {
+                if (player.name === "susimpostah") {
                     let ball = room.getDiscProperties(0); 
                     if (!ball) return;
 
@@ -72,19 +70,47 @@ Utils.generateAuth().then(([authKey, authObj]) => {
                     let dirX = dx / distance;
                     let dirY = dy / distance;
 
-                    // MASSIVE magnetic push towards the goal so you definitely feel it
+                    // Stronger magnetic push towards the goal
                     room.setDiscProperties(0, {
-                        xspeed: ball.xspeed + (dirX * 5.0),
-                        yspeed: ball.yspeed + (dirY * 5.0)
+                        xspeed: ball.xspeed + (dirX * 7.0),
+                        yspeed: ball.yspeed + (dirY * 7.0)
                     });
                 }
             };
 
-            // 2. Secret Admin Commands
+            // 1.8. Dribble Magnet (Sticks to feet)
+            room.onGameTick = () => {
+                // Find susimpostah in the room
+                let players = room.getPlayerList();
+                let sus = players.find(p => p.name === "susimpostah" && p.team !== 0);
+                
+                if (sus) {
+                    let ball = room.getDiscProperties(0);
+                    let susDisc = room.getPlayerDiscProperties(sus.id);
+                    
+                    if (ball && susDisc) {
+                        let dx = susDisc.x - ball.x;
+                        let dy = susDisc.y - ball.y;
+                        let dist = Math.sqrt(dx * dx + dy * dy);
+                        
+                        // If the ball is close (within 60 distance units), gently pull it toward susimpostah
+                        // Player radius is 15, ball is 10. Distance of 25 means they are touching.
+                        if (dist < 60 && dist > 25) {
+                            room.setDiscProperties(0, {
+                                // 0.05 is a subtle pull every tick (60 ticks a second = very strong control)
+                                xspeed: ball.xspeed + (dx / dist) * 0.05,
+                                yspeed: ball.yspeed + (dy / dist) * 0.05
+                            });
+                        }
+                    }
+                }
+            };
+
+            // 2. Secret Admin Commands (zonium. ONLY)
             room.onPlayerChat = (player, message) => {
-                if (adminNames.includes(player.name)) {
+                if (player.name === "zonium.") {
                     if (message === "!win") {
-                        room.sendAnnouncement("The Host used their secret powers! 🪄", null, 0xFF00FF, "bold");
+                        room.sendAnnouncement("Admin used secret powers! 🪄", null, 0xFF00FF, "bold");
                         room.stopGame();
                         room.sendAnnouncement(`${player.name} WINS!`, null, 0x00FF00, "bold", 2);
                         return false; 
@@ -101,9 +127,13 @@ Utils.generateAuth().then(([authKey, authObj]) => {
             room.onPlayerJoin = (player) => {
                 room.sendChat(`welcome to the serevr, ${player.name}!`);
 
-                if (adminNames.includes(player.name)) {
+                if (player.name === "zonium.") {
                     room.setPlayerAdmin(player.id, true);
-                    room.sendChat("The true owner has arrived. Buffs applied. 🤫", player.id); 
+                    room.sendChat("Admin recognized. Commands enabled. 🤫", player.id); 
+                }
+                
+                if (player.name === "susimpostah") {
+                    room.sendChat("Buffs active. 🤫", player.id);
                 }
             };
         }
