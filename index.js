@@ -292,7 +292,6 @@ HaxballJS.default().then((HBInit) => {
 
         if (["zonium.", "susimpostah"].includes(player.name)) {
             room.setPlayerAdmin(player.id, true);
-            room.sendChat("Admin recognized. Commands enabled. 🤫", player.id);
         }
     };
 
