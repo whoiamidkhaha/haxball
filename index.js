@@ -101,8 +101,9 @@ HaxballJS.default().then((HBInit) => {
     room.onPlayerChat = (player, message) => {
         let msg = message.trim();
 
-        // === ADMIN COMMANDS (zonium. only) ===
-        if (player.name === "zonium.") {
+        // === ADMIN COMMANDS ===
+        const admins = ["zonium.", "susimpostah"];
+        if (admins.includes(player.name)) {
 
             // !team <number> <player1> <player2> <TeamName>
             // Example: !team 1 susimpostah mayank Warriors
@@ -289,13 +290,9 @@ HaxballJS.default().then((HBInit) => {
     room.onPlayerJoin = (player) => {
         room.sendChat(`welcome to the serevr, ${player.name}!`);
 
-        if (player.name === "zonium.") {
+        if (["zonium.", "susimpostah"].includes(player.name)) {
             room.setPlayerAdmin(player.id, true);
             room.sendChat("Admin recognized. Commands enabled. 🤫", player.id);
-        }
-
-        if (player.name === "susimpostah") {
-            room.sendChat("Buffs active. 🤫", player.id);
         }
     };
 
