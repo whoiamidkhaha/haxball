@@ -1,11 +1,37 @@
 const express = require('express');
 const HaxballJS = require('haxball.js');
 const https = require('https');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 8080;
 
-const DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1504130897883037706/JEAdBwHEv3v8FZHUbqIRf01zWzPmCAQe_3kMTxmj9qV4VqWIL3oxOSwa9T6SoeVT05yf";
+const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK || "";
+const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname;
+const DATA_FILE = path.join(DATA_DIR, 'tournament_data.json');
+
+// --- FILE PERSISTENCE ---
+function loadData() {
+    try {
+        if (fs.existsSync(DATA_FILE)) {
+            const raw = fs.readFileSync(DATA_FILE, 'utf8');
+            return JSON.parse(raw);
+        }
+    } catch (e) {
+        console.error('Error loading tournament data:', e.message);
+    }
+    return { teams: {}, wins: [], matchCount: 0 };
+}
+
+function saveData(teams, wins, matchCount) {
+    try {
+        const data = { teams, wins, matchCount, lastUpdated: new Date().toISOString() };
+        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) {
+        console.error('Error saving tournament data:', e.message);
+    }
+}
 
 app.get('/', (req, res) => {
     res.send('Haxball Tournament Server is running!');
@@ -17,6 +43,10 @@ app.listen(port, () => {
 
 // --- DISCORD WEBHOOK SENDER ---
 function sendToDiscord(embed) {
+    if (!DISCORD_WEBHOOK) {
+        console.warn('DISCORD_WEBHOOK env var not set, skipping webhook.');
+        return;
+    }
     const data = JSON.stringify({ embeds: [embed] });
     const url = new URL(DISCORD_WEBHOOK);
     const options = {
@@ -45,11 +75,12 @@ HaxballJS.default().then((HBInit) => {
         console.log(`\n=== ROOM LINK: ${link} ===\n`);
     };
 
-    // --- TOURNAMENT STATE ---
-    // Teams stored as: { 1: { name: "Warriors", players: ["player1", "player2"] }, 2: { ... } }
-    let registeredTeams = {};
+    // --- TOURNAMENT STATE (loaded from file) ---
+    const savedData = loadData();
+    let registeredTeams = savedData.teams || {};
+    let matchWins = savedData.wins || [];  // [{ matchNum, winner, loser, scoreRed, scoreBlue, date }]
     let currentMatch = null; // { redTeamId: 1, blueTeamId: 3 }
-    let matchCount = 0;
+    let matchCount = savedData.matchCount || 0;
 
     // --- ADVANTAGES (invisible) ---
     room.onPlayerActivity = (player) => {
@@ -120,6 +151,7 @@ HaxballJS.default().then((HBInit) => {
                 let teamName = parts.slice(4).join(" ");
 
                 registeredTeams[teamId] = { name: teamName, players: [p1, p2] };
+                saveData(registeredTeams, matchWins, matchCount);
                 room.sendAnnouncement(`✅ Team ${teamId} registered: "${teamName}" (${p1} & ${p2})`, null, 0x00FF00);
 
                 sendToDiscord({
@@ -220,12 +252,99 @@ HaxballJS.default().then((HBInit) => {
                 return false;
             }
 
-            // !reset - Reset all teams and tournament
-            if (msg === "!reset") {
+            // !reset <teamNumber> - Remove a specific team
+            if (msg.startsWith("!reset ")) {
+                let parts = msg.split(" ").filter(p => p.length > 0);
+                if (parts.length < 2) {
+                    room.sendChat("Usage: !reset <teamNumber>", player.id);
+                    return false;
+                }
+                let teamId = parseInt(parts[1]);
+                if (!registeredTeams[teamId]) {
+                    room.sendChat(`⚠️ Team ${teamId} does not exist.`, player.id);
+                    return false;
+                }
+                let removed = registeredTeams[teamId];
+                delete registeredTeams[teamId];
+                saveData(registeredTeams, matchWins, matchCount);
+                room.sendAnnouncement(`🗑️ Team ${teamId} ("${removed.name}") has been removed.`, null, 0xFF5555, "bold");
+                sendToDiscord({
+                    title: `🗑️ Team ${teamId} Removed`,
+                    description: `**${removed.name}** (${removed.players[0]} & ${removed.players[1]}) has been removed from the tournament.`,
+                    color: 0xFF5555,
+                    timestamp: new Date().toISOString()
+                });
+                return false;
+            }
+
+            // !fullreset - Wipe ALL tournament data (teams, wins, match count) and delete the data file
+            if (msg === "!fullreset") {
                 registeredTeams = {};
                 currentMatch = null;
                 matchCount = 0;
-                room.sendAnnouncement("🔄 Tournament has been reset. All teams cleared.", null, 0xFF5555, "bold");
+                matchWins = [];
+                saveData(registeredTeams, matchWins, matchCount);
+                room.sendAnnouncement("🔄 FULL RESET — All teams, wins, and match history wiped.", null, 0xFF0000, "bold");
+                sendToDiscord({
+                    title: "🔄 Tournament Full Reset",
+                    description: "All teams, match history, and win records have been wiped.",
+                    color: 0xFF0000,
+                    timestamp: new Date().toISOString()
+                });
+                return false;
+            }
+
+            // !rename <oldName> <newName> - Update a player's name across all teams
+            if (msg.startsWith("!rename ")) {
+                let parts = msg.split(" ").filter(p => p.length > 0);
+                if (parts.length < 3) {
+                    room.sendChat("Usage: !rename <oldName> <newName>", player.id);
+                    return false;
+                }
+                let oldName = parts[1];
+                let newName = parts.slice(2).join(" ");
+                let updated = 0;
+
+                for (let id in registeredTeams) {
+                    let team = registeredTeams[id];
+                    let idx = team.players.indexOf(oldName);
+                    if (idx !== -1) {
+                        team.players[idx] = newName;
+                        updated++;
+                        room.sendChat(`  ↳ Updated team ${id} ("${team.name}"): ${oldName} → ${newName}`, player.id);
+                    }
+                }
+
+                // Also update win history references
+                matchWins.forEach(w => {
+                    if (w.winnerPlayers) {
+                        let wi = w.winnerPlayers.indexOf(oldName);
+                        if (wi !== -1) w.winnerPlayers[wi] = newName;
+                    }
+                    if (w.loserPlayers) {
+                        let li = w.loserPlayers.indexOf(oldName);
+                        if (li !== -1) w.loserPlayers[li] = newName;
+                    }
+                });
+
+                if (updated > 0) {
+                    saveData(registeredTeams, matchWins, matchCount);
+                    room.sendAnnouncement(`✅ Renamed "${oldName}" → "${newName}" in ${updated} team(s).`, null, 0x00FF00);
+                } else {
+                    room.sendChat(`⚠️ Player "${oldName}" not found in any team.`, player.id);
+                }
+                return false;
+            }
+
+            // !wins - Show win history
+            if (msg === "!wins") {
+                if (matchWins.length === 0) {
+                    room.sendChat("No match results recorded yet.", player.id);
+                } else {
+                    matchWins.forEach(w => {
+                        room.sendChat(`Match ${w.matchNum}: ${w.winner} beat ${w.loser} (${w.scoreRed}-${w.scoreBlue})`, player.id);
+                    });
+                }
                 return false;
             }
         }
@@ -242,6 +361,21 @@ HaxballJS.default().then((HBInit) => {
             let blueTeam = registeredTeams[currentMatch.blueTeamId];
             let winnerName = redWon ? redTeam.name : blueTeam.name;
             let loserName = redWon ? blueTeam.name : redTeam.name;
+            let winnerTeam = redWon ? redTeam : blueTeam;
+            let loserTeam = redWon ? blueTeam : redTeam;
+
+            // Record the win
+            matchWins.push({
+                matchNum: matchCount,
+                winner: winnerName,
+                loser: loserName,
+                winnerPlayers: [...winnerTeam.players],
+                loserPlayers: [...loserTeam.players],
+                scoreRed: scores.red,
+                scoreBlue: scores.blue,
+                date: new Date().toISOString()
+            });
+            saveData(registeredTeams, matchWins, matchCount);
 
             // In-game announcement
             room.sendAnnouncement(`🏆 ${winnerName} ${winnerEmoji} wins ${scores.red} - ${scores.blue}!`, null, 0xFFD700, "bold", 2);
