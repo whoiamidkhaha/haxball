@@ -121,6 +121,19 @@ HaxballJS.default().then((HBInit) => {
 
                 registeredTeams[teamId] = { name: teamName, players: [p1, p2] };
                 room.sendAnnouncement(`✅ Team ${teamId} registered: "${teamName}" (${p1} & ${p2})`, null, 0x00FF00);
+
+                sendToDiscord({
+                    title: `✅ Team ${teamId} Registered`,
+                    description: `**${teamName}**`,
+                    fields: [
+                        { name: "Player 1", value: p1, inline: true },
+                        { name: "Player 2", value: p2, inline: true }
+                    ],
+                    color: 0x00FF00,
+                    footer: { text: "Bless Network Haxball Championship" },
+                    timestamp: new Date().toISOString()
+                });
+
                 return false;
             }
 
