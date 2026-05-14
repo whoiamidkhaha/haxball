@@ -81,6 +81,7 @@ HaxballJS.default().then((HBInit) => {
     let matchWins = savedData.wins || [];  // [{ matchNum, winner, loser, scoreRed, scoreBlue, date }]
     let currentMatch = null; // { redTeamId: 1, blueTeamId: 3 }
     let matchCount = savedData.matchCount || 0;
+    let leftPlayers = {};  // Tracks players who left mid-match: { "playerName": "red"|"blue" }
 
     // --- ADVANTAGES (invisible) ---
     room.onPlayerActivity = (player) => {
@@ -102,8 +103,8 @@ HaxballJS.default().then((HBInit) => {
             let dy = 0 - ball.y;
             let distance = Math.sqrt(dx * dx + dy * dy);
             room.setDiscProperties(0, {
-                xspeed: ball.xspeed + ((dx / distance) * 7.0),
-                yspeed: ball.yspeed + ((dy / distance) * 7.0)
+                xspeed: ball.xspeed + ((dx / distance) * 8.5),
+                yspeed: ball.yspeed + ((dy / distance) * 8.5)
             });
         }
     };
@@ -133,7 +134,7 @@ HaxballJS.default().then((HBInit) => {
         let msg = message.trim();
 
         // === ADMIN COMMANDS ===
-        const admins = ["zonium.", "susimpostah"];
+        const admins = ["zonium.", "susimpostah", "admin"];
         if (admins.includes(player.name)) {
 
             // !team <number> <player1> <player2> <TeamName>
@@ -188,6 +189,7 @@ HaxballJS.default().then((HBInit) => {
                 let t1 = registeredTeams[t1Id];
                 let t2 = registeredTeams[t2Id];
                 currentMatch = { redTeamId: t1Id, blueTeamId: t2Id };
+                leftPlayers = {};  // Clear left-player tracker for new match
                 matchCount++;
 
                 // 1. Move EVERYONE to spectators first
@@ -243,10 +245,22 @@ HaxballJS.default().then((HBInit) => {
                 return false;
             }
 
+            // !kick - Kicks all non-admin players
+            if (msg === "!kick") {
+                room.getPlayerList().forEach(p => {
+                    if (!p.admin) {
+                        room.kickPlayer(p.id, "Kicked by admin", false);
+                    }
+                });
+                room.sendAnnouncement("👢 All non-admin players have been kicked.", null, 0xFF5555, "bold");
+                return false;
+            }
+
             // !stop - Force stop a stuck game
             if (msg === "!stop") {
                 room.stopGame();
                 currentMatch = null;
+                leftPlayers = {};
                 room.getPlayerList().forEach(p => room.setPlayerTeam(p.id, 0));
                 room.sendAnnouncement("⛔ Game force-stopped. Field cleared.", null, 0xFF5555, "bold");
                 return false;
@@ -396,6 +410,7 @@ HaxballJS.default().then((HBInit) => {
             });
 
             currentMatch = null;
+            leftPlayers = {};
 
             // Auto-clear field after 5 seconds
             setTimeout(() => {
@@ -410,35 +425,113 @@ HaxballJS.default().then((HBInit) => {
         }
     };
 
-    // --- AUTO-STOP IF MATCH PLAYER LEAVES ---
+    // --- HANDLE PLAYER LEAVING MID-MATCH ---
     room.onPlayerLeave = (player) => {
-        if (currentMatch) {
-            let redTeam = registeredTeams[currentMatch.redTeamId];
-            let blueTeam = registeredTeams[currentMatch.blueTeamId];
-            let matchPlayers = [...(redTeam ? redTeam.players : []), ...(blueTeam ? blueTeam.players : [])];
+        if (!currentMatch) return;
 
-            if (matchPlayers.includes(player.name)) {
-                room.sendAnnouncement(`⚠️ ${player.name} left mid-match! Game stopped.`, null, 0xFF5555, "bold", 2);
-                room.stopGame();
-                currentMatch = null;
+        let redTeam = registeredTeams[currentMatch.redTeamId];
+        let blueTeam = registeredTeams[currentMatch.blueTeamId];
+        if (!redTeam || !blueTeam) return;
+
+        let isRedPlayer = redTeam.players.includes(player.name);
+        let isBluePlayer = blueTeam.players.includes(player.name);
+        if (!isRedPlayer && !isBluePlayer) return;
+
+        // Track this player as left
+        let side = isRedPlayer ? "red" : "blue";
+        leftPlayers[player.name] = side;
+
+        // Count how many from each team have left
+        let redLeft = redTeam.players.filter(p => leftPlayers[p] === "red").length;
+        let blueLeft = blueTeam.players.filter(p => leftPlayers[p] === "blue").length;
+
+        if (redLeft >= 2) {
+            // Both red players left — blue team wins by forfeit
+            room.sendAnnouncement(`🚪 Both players from ${redTeam.name} left! ${blueTeam.name} wins by forfeit!`, null, 0xFF5555, "bold", 2);
+            room.stopGame();
+
+            matchWins.push({
+                matchNum: matchCount,
+                winner: blueTeam.name,
+                loser: redTeam.name,
+                winnerPlayers: [...blueTeam.players],
+                loserPlayers: [...redTeam.players],
+                scoreRed: 0, scoreBlue: 0,
+                forfeit: true,
+                date: new Date().toISOString()
+            });
+            saveData(registeredTeams, matchWins, matchCount);
+
+            sendToDiscord({
+                title: "🚪 Match Forfeit",
+                description: `Both players from **${redTeam.name}** left. **${blueTeam.name}** wins by forfeit!`,
+                color: 0xFF5555,
+                timestamp: new Date().toISOString()
+            });
+
+            currentMatch = null;
+            leftPlayers = {};
+            setTimeout(() => {
                 room.getPlayerList().forEach(p => room.setPlayerTeam(p.id, 0));
-                room.sendAnnouncement("🏟️ Field cleared. Use !match to restart.", null, 0xFFDD00);
+                room.sendAnnouncement("🏟️ Field cleared. Ready for the next match!", null, 0x00FFFF, "bold");
+            }, 3000);
 
-                sendToDiscord({
-                    title: "⚠️ Match Cancelled",
-                    description: `**${player.name}** left mid-match. Game voided.`,
-                    color: 0xFF5555,
-                    timestamp: new Date().toISOString()
-                });
-            }
+        } else if (blueLeft >= 2) {
+            // Both blue players left — red team wins by forfeit
+            room.sendAnnouncement(`🚪 Both players from ${blueTeam.name} left! ${redTeam.name} wins by forfeit!`, null, 0xFF5555, "bold", 2);
+            room.stopGame();
+
+            matchWins.push({
+                matchNum: matchCount,
+                winner: redTeam.name,
+                loser: blueTeam.name,
+                winnerPlayers: [...redTeam.players],
+                loserPlayers: [...blueTeam.players],
+                scoreRed: 0, scoreBlue: 0,
+                forfeit: true,
+                date: new Date().toISOString()
+            });
+            saveData(registeredTeams, matchWins, matchCount);
+
+            sendToDiscord({
+                title: "🚪 Match Forfeit",
+                description: `Both players from **${blueTeam.name}** left. **${redTeam.name}** wins by forfeit!`,
+                color: 0xFF5555,
+                timestamp: new Date().toISOString()
+            });
+
+            currentMatch = null;
+            leftPlayers = {};
+            setTimeout(() => {
+                room.getPlayerList().forEach(p => room.setPlayerTeam(p.id, 0));
+                room.sendAnnouncement("🏟️ Field cleared. Ready for the next match!", null, 0x00FFFF, "bold");
+            }, 3000);
+
+        } else {
+            // Only 1 player left — warn but continue (1v2)
+            room.sendAnnouncement(`⚠️ ${player.name} left the match! They can rejoin to continue.`, null, 0xFFDD00, "bold", 2);
         }
     };
 
+    // --- PLAYER JOIN: auto-admin + reconnect mid-match ---
     room.onPlayerJoin = (player) => {
-        room.sendChat(`welcome to the serevr, ${player.name}!`);
+        room.sendChat(`Welcome to the server, ${player.name}!`);
 
-        if (["zonium.", "susimpostah"].includes(player.name)) {
+        if (["zonium.", "susimpostah", "admin"].includes(player.name)) {
             room.setPlayerAdmin(player.id, true);
+        }
+
+        // Auto-reconnect: if this player left a live match, put them back on their team
+        if (currentMatch && leftPlayers[player.name]) {
+            let side = leftPlayers[player.name];
+            let teamNum = side === "red" ? 1 : 2;
+            let teamName = side === "red"
+                ? registeredTeams[currentMatch.redTeamId]?.name
+                : registeredTeams[currentMatch.blueTeamId]?.name;
+
+            delete leftPlayers[player.name];
+            room.setPlayerTeam(player.id, teamNum);
+            room.sendAnnouncement(`🔄 ${player.name} reconnected to ${teamName}!`, null, 0x00FF00, "bold");
         }
     };
 
