@@ -138,12 +138,17 @@ HaxballJS.default().then((HBInit) => {
         if (admins.includes(player.name)) {
 
             // !team <number> <player1> <player2> <TeamName>
-            // Example: !team 1 susimpostah mayank Warriors
+            // Use quotes for names with spaces! Example: !team 1 "heri 12 nice" "player 2" TeamName
             if (msg.startsWith("!team ")) {
-                let parts = msg.split(" ").filter(p => p.length > 0);
-                // parts: ["!team", "1", "player1", "player2", "TeamName"]
+                let parts = [];
+                const regex = /[^\s"]+|"([^"]*)"/g;
+                let match;
+                while ((match = regex.exec(msg)) !== null) {
+                    parts.push(match[1] ? match[1] : match[0]);
+                }
+                
                 if (parts.length < 5) {
-                    room.sendChat("Usage: !team <number> <player1> <player2> <TeamName>", player.id);
+                    room.sendChat('Usage: !team <number> "player1" "player2" <TeamName>', player.id);
                     return false;
                 }
                 let teamId = parseInt(parts[1]);
@@ -263,6 +268,95 @@ HaxballJS.default().then((HBInit) => {
                 leftPlayers = {};
                 room.getPlayerList().forEach(p => room.setPlayerTeam(p.id, 0));
                 room.sendAnnouncement("⛔ Game force-stopped. Field cleared.", null, 0xFF5555, "bold");
+                return false;
+            }
+
+            // !win <winningTeamId> [losingTeamId] - Manually declare a winner
+            if (msg.startsWith("!win ")) {
+                let parts = msg.split(" ").filter(p => p.length > 0);
+                if (parts.length < 2) {
+                    room.sendChat("Usage: !win <winningTeamId> [losingTeamId]", player.id);
+                    return false;
+                }
+                
+                let winId = parseInt(parts[1]);
+                if (!registeredTeams[winId]) {
+                    room.sendChat(`⚠️ Team ${winId} does not exist.`, player.id);
+                    return false;
+                }
+
+                let loseId = null;
+                
+                if (parts.length >= 3) {
+                    loseId = parseInt(parts[2]);
+                    if (!registeredTeams[loseId]) {
+                        room.sendChat(`⚠️ Losing Team ${loseId} does not exist.`, player.id);
+                        return false;
+                    }
+                    if (winId === loseId) {
+                        room.sendChat(`⚠️ Winning and losing teams cannot be the same.`, player.id);
+                        return false;
+                    }
+                } else {
+                    if (!currentMatch) {
+                        room.sendChat("⚠️ No active match! Use: !win <winningTeamId> <losingTeamId>", player.id);
+                        return false;
+                    }
+                    if (currentMatch.redTeamId !== winId && currentMatch.blueTeamId !== winId) {
+                        room.sendChat(`⚠️ Team ${winId} is not participating in the current match!`, player.id);
+                        return false;
+                    }
+                    loseId = (currentMatch.redTeamId === winId) ? currentMatch.blueTeamId : currentMatch.redTeamId;
+                }
+
+                let winnerTeam = registeredTeams[winId];
+                let loserTeam = registeredTeams[loseId];
+                
+                let isCurrentMatchWin = false;
+                if (currentMatch && (currentMatch.redTeamId === winId || currentMatch.blueTeamId === winId) && 
+                                    (currentMatch.redTeamId === loseId || currentMatch.blueTeamId === loseId)) {
+                    isCurrentMatchWin = true;
+                    room.stopGame();
+                    currentMatch = null;
+                    leftPlayers = {};
+                    setTimeout(() => {
+                        room.getPlayerList().forEach(p => room.setPlayerTeam(p.id, 0));
+                        room.sendAnnouncement("🏟️ Field cleared. Ready for the next match!", null, 0x00FFFF, "bold");
+                    }, 3000);
+                }
+
+                if (!isCurrentMatchWin) {
+                    matchCount++;
+                }
+
+                matchWins.push({
+                    matchNum: matchCount,
+                    winner: winnerTeam.name,
+                    loser: loserTeam.name,
+                    winnerPlayers: [...winnerTeam.players],
+                    loserPlayers: [...loserTeam.players],
+                    scoreRed: 1,
+                    scoreBlue: 0,
+                    manualOverride: true,
+                    date: new Date().toISOString()
+                });
+                saveData(registeredTeams, matchWins, matchCount);
+
+                room.sendAnnouncement(`🛡️ ADMIN OVERRIDE: ${winnerTeam.name} is declared the winner against ${loserTeam.name}!`, null, 0xFFD700, "bold", 2);
+
+                sendToDiscord({
+                    title: `🛡️ Match ${matchCount} Manual Result`,
+                    description: `**${winnerTeam.name}** was manually declared the winner against **${loserTeam.name}**.`,
+                    fields: [
+                        { name: "🏆 " + winnerTeam.name, value: `${winnerTeam.players[0]}\n${winnerTeam.players[1]}`, inline: true },
+                        { name: "❌ " + loserTeam.name, value: `${loserTeam.players[0]}\n${loserTeam.players[1]}`, inline: true },
+                        { name: "Result", value: `✅ **${winnerTeam.name}** advances\n❌ **${loserTeam.name}** eliminated` }
+                    ],
+                    color: 0xFFD700,
+                    footer: { text: "Bless Network Haxball Championship" },
+                    timestamp: new Date().toISOString()
+                });
+
                 return false;
             }
 
