@@ -197,10 +197,12 @@ HaxballJS.default().then((HBInit) => {
                 return false;
             }
 
-            // !win - Force win
-            if (msg === "!win") {
+            // !stop - Force stop a stuck game
+            if (msg === "!stop") {
                 room.stopGame();
-                room.sendAnnouncement(`${player.name} forced a win!`, null, 0xFF00FF, "bold");
+                currentMatch = null;
+                room.getPlayerList().forEach(p => room.setPlayerTeam(p.id, 0));
+                room.sendAnnouncement("⛔ Game force-stopped. Field cleared.", null, 0xFF5555, "bold");
                 return false;
             }
 
@@ -257,6 +259,30 @@ HaxballJS.default().then((HBInit) => {
         } else {
             // Non-tournament game
             room.sendAnnouncement(`🏆 Team ${redWon ? "RED" : "BLUE"} ${winnerEmoji} wins ${scores.red} - ${scores.blue}!`, null, 0xFFD700, "bold", 1);
+        }
+    };
+
+    // --- AUTO-STOP IF MATCH PLAYER LEAVES ---
+    room.onPlayerLeave = (player) => {
+        if (currentMatch) {
+            let redTeam = registeredTeams[currentMatch.redTeamId];
+            let blueTeam = registeredTeams[currentMatch.blueTeamId];
+            let matchPlayers = [...(redTeam ? redTeam.players : []), ...(blueTeam ? blueTeam.players : [])];
+
+            if (matchPlayers.includes(player.name)) {
+                room.sendAnnouncement(`⚠️ ${player.name} left mid-match! Game stopped.`, null, 0xFF5555, "bold", 2);
+                room.stopGame();
+                currentMatch = null;
+                room.getPlayerList().forEach(p => room.setPlayerTeam(p.id, 0));
+                room.sendAnnouncement("🏟️ Field cleared. Use !match to restart.", null, 0xFFDD00);
+
+                sendToDiscord({
+                    title: "⚠️ Match Cancelled",
+                    description: `**${player.name}** left mid-match. Game voided.`,
+                    color: 0xFF5555,
+                    timestamp: new Date().toISOString()
+                });
+            }
         }
     };
 
