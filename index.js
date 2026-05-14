@@ -68,7 +68,8 @@ HaxballJS.default().then((HBInit) => {
         maxPlayers: 16,
         public: true,
         noPlayer: true,
-        token: process.env.HAXBALL_TOKEN
+        token: process.env.HAXBALL_TOKEN,
+        geo: { code: "PH", lat: 14.5995, lon: 120.9842 }
     });
 
     room.onRoomLink = function(link) {
